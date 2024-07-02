@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="analyze-folder-for-llm",
-    version="0.1.0",
+    version="0.1.1",
     author="jeblister",
     author_email="jeblister@waveup.dev",
     description="A tool for analyzing folder structures and content for use with large context on LLMs",

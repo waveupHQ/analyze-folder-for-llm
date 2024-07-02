@@ -1,7 +1,8 @@
 exclude:
-  - "__pycache__"
+  - "**/__pycache__/**"
+  - "**/*.egg-info/**"
   - "output"
-  - "venv"
+  - "**/venv/**"
   - "env"
   - ".venv"
   - ".env"
@@ -29,8 +30,7 @@ exclude:
   - "docs/_build"
   - "site"
   - ".DS_Store"
-  - ".egg-info"
-  - "output"
+  - "**/output/**"
 
 include:
   - "src"

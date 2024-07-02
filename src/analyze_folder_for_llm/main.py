@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional, Dict
+from typing import List, Optional
 import fnmatch
 import json
 from pydantic import BaseModel, Field
@@ -31,47 +31,57 @@ class FolderAnalyzer:
         self.include = set(include or preset.include)
         self.output_dir = os.path.join(self.path, "output")
         os.makedirs(self.output_dir, exist_ok=True)
+        self.included_files = []
+        console.print("[bold]FolderAnalyzer initialized with:[/bold]")
+        console.print(f"Path: {self.path}")
+        console.print(f"Exclude patterns: {self.exclude}")
+        console.print(f"Include patterns: {self.include}")
 
     def should_process_file(self, file_path: str) -> bool:
         relative_path = os.path.relpath(file_path, self.path)
         path_parts = relative_path.split(os.sep)
 
-        print(f"Checking file: {relative_path}")
-        print(f"Exclude patterns: {self.exclude}")
-        print(f"Include patterns: {self.include}")
+        console.print(f"Checking file: {relative_path}")
 
-        # Check if any part of the path is in the exclude list
-        if any(excluded in path_parts for excluded in self.exclude):
-            print(f"File excluded: {relative_path}")
+        # Check exclusions first
+        for exclude_pattern in self.exclude:
+            if any(fnmatch.fnmatch(part, exclude_pattern) for part in path_parts):
+                console.print(
+                    f"[red]File excluded:[/red] {relative_path} (matched {exclude_pattern})"
+                )
+                return False
+
+        # If include patterns are specified, the file must match at least one
+        if self.include:
+            for include_pattern in self.include:
+                if fnmatch.fnmatch(relative_path, include_pattern):
+                    console.print(
+                        f"[green]File included:[/green] {relative_path} (matched {include_pattern})"
+                    )
+                    self.included_files.append(relative_path)
+                    return True
+            console.print(
+                f"[yellow]File not included:[/yellow] {relative_path} (did not match any include pattern)"
+            )
             return False
 
-        # If include patterns are specified, check if the file matches any
-        if self.include:
-            should_include = any(
-                self._match_pattern(relative_path, pattern) for pattern in self.include
-            )
-            print(f"Include check result: {should_include}")
-            return should_include
-
-        # Default include logic for Python files and README
-        default_include = (
-            file_path.endswith(".py")
-            or os.path.basename(file_path).lower() == "readme.md"
+        # If no include patterns, default to including all files
+        console.print(
+            f"[green]File included:[/green] {relative_path} (no include patterns specified)"
         )
-        print(f"Default include check result: {default_include}")
-        return default_include
-
-    def _match_pattern(self, path: str, pattern: str) -> bool:
-        result = fnmatch.fnmatch(path, pattern)
-        print(f"Matching {path} against {pattern}: {result}")
-        return result
+        self.included_files.append(relative_path)
+        return True
 
     def analyze_folder(self) -> dict:
         analysis = {"structure": [], "file_contents": {}, "readme": None}
 
         for root, dirs, files in os.walk(self.path):
             # Remove excluded directories
-            dirs[:] = [d for d in dirs if d not in self.exclude]
+            dirs[:] = [
+                d
+                for d in dirs
+                if not any(fnmatch.fnmatch(d, pattern) for pattern in self.exclude)
+            ]
 
             for file in files:
                 file_path = os.path.join(root, file)
@@ -81,13 +91,21 @@ class FolderAnalyzer:
                         {"path": relative_path, "type": "file"}
                     )
 
-                    with open(file_path, "r", encoding="utf-8") as infile:
-                        content = infile.read()
-                        if file.lower() == "readme.md":
-                            analysis["readme"] = content
-                        else:
-                            analysis["file_contents"][relative_path] = content
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as infile:
+                            content = infile.read()
+                            if file.lower() == "readme.md":
+                                analysis["readme"] = content
+                            else:
+                                analysis["file_contents"][relative_path] = content
+                    except UnicodeDecodeError:
+                        console.print(
+                            f"[yellow]Warning: Could not read file {relative_path} as text. Skipping.[/yellow]"
+                        )
 
+        console.print(
+            f"\n[bold]Total files included:[/bold] {len(self.included_files)}"
+        )
         return analysis
 
     def generate_structured_output(self, analysis: dict) -> str:
@@ -137,13 +155,16 @@ class FolderAnalyzer:
 
 
 def load_preset(preset_file: str) -> PresetConfig:
-    # Load preset configuration from YAML file
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    preset_path = os.path.join(script_dir, preset_file)
+    preset_path = os.path.abspath(preset_file)
     if os.path.exists(preset_path):
         with open(preset_path, "r") as f:
             data = yaml.safe_load(f)
+        console.print(f"[bold]Loaded preset from {preset_path}:[/bold]")
+        console.print(yaml.dump(data, default_flow_style=False))
         return PresetConfig(**data)
+    console.print(
+        f"[yellow]Warning: Preset file {preset_path} not found. Using default configuration.[/yellow]"
+    )
     return PresetConfig()
 
 
@@ -163,7 +184,11 @@ def folder_to_llm(
     """Analyze a folder and prepare its contents for LLM processing."""
     preset_config = load_preset(preset)
     analyzer = FolderAnalyzer(path, preset_config, exc, inc)
+
+    console.print("[bold blue]Starting folder analysis...[/bold blue]")
     analysis = analyzer.analyze_folder()
+
+    console.print("[bold blue]Generating structured output...[/bold blue]")
     structured_output = analyzer.generate_structured_output(analysis)
 
     console.print(Panel.fit("Structured Output", title="Analysis Result"))
